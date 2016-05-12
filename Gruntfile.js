@@ -6,6 +6,7 @@ module.exports = function (grunt) {
     pkg: grunt.file.readJSON('package.json'),
     baseDir: '.',
     srcDir: 'public',
+    genDir: 'public_gen',
     destDir: 'dist',
     tempDir: 'tmp',
     arch: os.arch(),
@@ -17,6 +18,7 @@ module.exports = function (grunt) {
   }
 
   config.pkg.version = grunt.option('pkgVer') || config.pkg.version;
+  console.log('Version', config.pkg.version);
 
   // load plugins
   require('load-grunt-tasks')(grunt);

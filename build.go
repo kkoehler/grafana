@@ -31,7 +31,7 @@ var (
 	linuxPackageIteration string = ""
 	race                  bool
 	workingDir            string
-	serverBinaryName      string = "grafana-server"
+	binaries              []string = []string{"grafana-server", "grafana-cli"}
 )
 
 const minGoVersion = 1.3
@@ -63,18 +63,26 @@ func main() {
 			setup()
 
 		case "build":
-			pkg := "."
 			clean()
-			build(pkg, []string{})
+			for _, binary := range binaries {
+				build(binary, "./pkg/cmd/"+binary, []string{})
+			}
 
 		case "test":
 			test("./pkg/...")
 			grunt("test")
 
 		case "package":
-			//verifyGitRepoIsClean()
-			grunt("release")
+			grunt("release", fmt.Sprintf("--pkgVer=%v-%v", linuxPackageVersion, linuxPackageIteration))
 			createLinuxPackages()
+
+		case "pkg-rpm":
+			grunt("release")
+			createRpmPackages()
+
+		case "pkg-deb":
+			grunt("release")
+			createDebPackages()
 
 		case "latest":
 			makeLatestDistCopies()
@@ -89,9 +97,14 @@ func main() {
 }
 
 func makeLatestDistCopies() {
-	runError("cp", "dist/grafana_"+version+"_amd64.deb", "dist/grafana_latest_amd64.deb")
-	runError("cp", "dist/grafana-"+strings.Replace(version, "-", "_", 5)+"-1.x86_64.rpm", "dist/grafana-latest-1.x86_64.rpm")
-	runError("cp", "dist/grafana-"+version+".linux-x64.tar.gz", "dist/grafana-latest.linux-x64.tar.gz")
+	rpmIteration := "-1"
+	if linuxPackageIteration != "" {
+		rpmIteration = linuxPackageIteration
+	}
+
+	runError("cp", fmt.Sprintf("dist/grafana_%v-%v_amd64.deb", linuxPackageVersion, linuxPackageIteration), "dist/grafana_latest_amd64.deb")
+	runError("cp", fmt.Sprintf("dist/grafana-%v-%v.x86_64.rpm", linuxPackageVersion, rpmIteration), "dist/grafana-latest-1.x86_64.rpm")
+	runError("cp", fmt.Sprintf("dist/grafana-%v-%v.linux-x64.tar.gz", linuxPackageVersion, linuxPackageIteration), "dist/grafana-latest.linux-x64.tar.gz")
 }
 
 func readVersionFromPackageJson() {
@@ -120,14 +133,20 @@ func readVersionFromPackageJson() {
 		linuxPackageVersion = parts[0]
 		linuxPackageIteration = parts[1]
 	}
+
+	// add timestamp to iteration
+	linuxPackageIteration = fmt.Sprintf("%d%s", time.Now().Unix(), linuxPackageIteration)
 }
 
 type linuxPackageOptions struct {
 	packageType            string
 	homeDir                string
 	binPath                string
+	serverBinPath          string
+	cliBinPath             string
 	configDir              string
 	configFilePath         string
+	ldapFilePath           string
 	etcDefaultPath         string
 	etcDefaultFilePath     string
 	initdScriptFilePath    string
@@ -141,13 +160,14 @@ type linuxPackageOptions struct {
 	depends []string
 }
 
-func createLinuxPackages() {
+func createDebPackages() {
 	createPackage(linuxPackageOptions{
 		packageType:            "deb",
 		homeDir:                "/usr/share/grafana",
-		binPath:                "/usr/sbin/grafana-server",
+		binPath:                "/usr/sbin",
 		configDir:              "/etc/grafana",
 		configFilePath:         "/etc/grafana/grafana.ini",
+		ldapFilePath:           "/etc/grafana/ldap.toml",
 		etcDefaultPath:         "/etc/default",
 		etcDefaultFilePath:     "/etc/default/grafana-server",
 		initdScriptFilePath:    "/etc/init.d/grafana-server",
@@ -160,13 +180,16 @@ func createLinuxPackages() {
 
 		depends: []string{"adduser", "libfontconfig"},
 	})
+}
 
+func createRpmPackages() {
 	createPackage(linuxPackageOptions{
 		packageType:            "rpm",
 		homeDir:                "/usr/share/grafana",
-		binPath:                "/usr/sbin/grafana-server",
+		binPath:                "/usr/sbin",
 		configDir:              "/etc/grafana",
 		configFilePath:         "/etc/grafana/grafana.ini",
+		ldapFilePath:           "/etc/grafana/ldap.toml",
 		etcDefaultPath:         "/etc/sysconfig",
 		etcDefaultFilePath:     "/etc/sysconfig/grafana-server",
 		initdScriptFilePath:    "/etc/init.d/grafana-server",
@@ -181,6 +204,11 @@ func createLinuxPackages() {
 	})
 }
 
+func createLinuxPackages() {
+	createDebPackages()
+	createRpmPackages()
+}
+
 func createPackage(options linuxPackageOptions) {
 	packageRoot, _ := ioutil.TempDir("", "grafana-linux-pack")
 
@@ -193,7 +221,9 @@ func createPackage(options linuxPackageOptions) {
 	runPrint("mkdir", "-p", filepath.Join(packageRoot, "/usr/sbin"))
 
 	// copy binary
-	runPrint("cp", "-p", filepath.Join(workingDir, "tmp/bin/"+serverBinaryName), filepath.Join(packageRoot, options.binPath))
+	for _, binary := range binaries {
+		runPrint("cp", "-p", filepath.Join(workingDir, "tmp/bin/"+binary), filepath.Join(packageRoot, "/usr/sbin/"+binary))
+	}
 	// copy init.d script
 	runPrint("cp", "-p", options.initdScriptSrc, filepath.Join(packageRoot, options.initdScriptFilePath))
 	// copy environment var file
@@ -204,8 +234,10 @@ func createPackage(options linuxPackageOptions) {
 	runPrint("cp", "-a", filepath.Join(workingDir, "tmp")+"/.", filepath.Join(packageRoot, options.homeDir))
 	// remove bin path
 	runPrint("rm", "-rf", filepath.Join(packageRoot, options.homeDir, "bin"))
-	// copy sample ini file to /etc/opt/grafana
+	// copy sample ini file to /etc/grafana
 	runPrint("cp", "conf/sample.ini", filepath.Join(packageRoot, options.configFilePath))
+	// copy sample ldap toml config file to /etc/grafana/ldap.toml
+	runPrint("cp", "conf/ldap.toml", filepath.Join(packageRoot, options.ldapFilePath))
 
 	args := []string{
 		"-s", "dir",
@@ -213,9 +245,10 @@ func createPackage(options linuxPackageOptions) {
 		"-C", packageRoot,
 		"--vendor", "Grafana",
 		"--url", "http://grafana.org",
-		"--license", "Apache 2.0",
+		"--license", "\"Apache 2.0\"",
 		"--maintainer", "contact@grafana.org",
 		"--config-files", options.configFilePath,
+		"--config-files", options.ldapFilePath,
 		"--config-files", options.initdScriptFilePath,
 		"--config-files", options.etcDefaultFilePath,
 		"--config-files", options.systemdServiceFilePath,
@@ -271,7 +304,7 @@ func ChangeWorkingDir(dir string) {
 }
 
 func grunt(params ...string) {
-	runPrint("./node_modules/grunt-cli/bin/grunt", params...)
+	runPrint("./node_modules/.bin/grunt", params...)
 }
 
 func setup() {
@@ -286,8 +319,8 @@ func test(pkg string) {
 	runPrint("go", "test", "-short", "-timeout", "60s", pkg)
 }
 
-func build(pkg string, tags []string) {
-	binary := "./bin/" + serverBinaryName
+func build(binaryName, pkg string, tags []string) {
+	binary := "./bin/" + binaryName
 	if goos == "windows" {
 		binary += ".exe"
 	}
@@ -304,6 +337,8 @@ func build(pkg string, tags []string) {
 	args = append(args, "-o", binary)
 	args = append(args, pkg)
 	setBuildEnv()
+
+	runPrint("go", "version")
 	runPrint("go", args...)
 
 	// Create an md5 checksum of the binary, to be included in the archive for
@@ -317,9 +352,9 @@ func build(pkg string, tags []string) {
 func ldflags() string {
 	var b bytes.Buffer
 	b.WriteString("-w")
-	b.WriteString(fmt.Sprintf(" -X main.version '%s'", version))
-	b.WriteString(fmt.Sprintf(" -X main.commit '%s'", getGitSha()))
-	b.WriteString(fmt.Sprintf(" -X main.buildstamp %d", buildStamp()))
+	b.WriteString(fmt.Sprintf(" -X main.version=%s", version))
+	b.WriteString(fmt.Sprintf(" -X main.commit=%s", getGitSha()))
+	b.WriteString(fmt.Sprintf(" -X main.buildstamp=%d", buildStamp()))
 	return b.String()
 }
 

@@ -41,7 +41,7 @@ type FileLogWriter struct {
 
 	startLock sync.Mutex // Only one log can write to the file
 
-	Level int `json:"level"`
+	Level LogLevel `json:"level"`
 }
 
 // an *os.File writer with locker.
@@ -132,7 +132,7 @@ func (w *FileLogWriter) docheck(size int) {
 }
 
 // write logger message into file.
-func (w *FileLogWriter) WriteMsg(msg string, skip, level int) error {
+func (w *FileLogWriter) WriteMsg(msg string, skip int, level LogLevel) error {
 	if level < w.Level {
 		return nil
 	}
@@ -144,7 +144,7 @@ func (w *FileLogWriter) WriteMsg(msg string, skip, level int) error {
 
 func (w *FileLogWriter) createLogFile() (*os.File, error) {
 	// Open the log file
-	return os.OpenFile(w.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	return os.OpenFile(w.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 }
 
 func (w *FileLogWriter) initFd() error {

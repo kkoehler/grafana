@@ -7,29 +7,68 @@ function (angular, _) {
 
   var module = angular.module('grafana.controllers');
 
-  module.controller('TemplateEditorCtrl', function($scope, datasourceSrv, templateSrv, templateValuesSrv, alertSrv) {
+  module.controller('TemplateEditorCtrl', function($scope, datasourceSrv, templateSrv, templateValuesSrv) {
 
     var replacementDefaults = {
       type: 'query',
       datasource: null,
-      refresh_on_load: false,
+      refresh: 0,
       name: '',
+      hide: 0,
       options: [],
       includeAll: false,
-      allFormat: 'glob',
       multi: false,
-      multiFormat: 'glob',
     };
 
+    $scope.variableTypes = [
+      {value: "query",      text: "Query"},
+      {value: "interval",   text: "Interval"},
+      {value: "datasource", text: "Data source"},
+      {value: "custom",     text: "Custom"},
+    ];
+
+    $scope.refreshOptions = [
+      {value: 0, text: "Never"},
+      {value: 1, text: "On Dashboard Load"},
+      {value: 2, text: "On Time Range Change"},
+    ];
+
+    $scope.hideOptions = [
+      {value: 0, text: ""},
+      {value: 1, text: "Label"},
+      {value: 2, text: "Variable"},
+    ];
+
     $scope.init = function() {
-      $scope.editor = { index: 0 };
-      $scope.datasources = datasourceSrv.getMetricSources();
+      $scope.mode = 'list';
+
+      $scope.datasourceTypes = {};
+      $scope.datasources = _.filter(datasourceSrv.getMetricSources(), function(ds) {
+        $scope.datasourceTypes[ds.meta.id] = {text: ds.meta.name, value: ds.meta.id};
+        return !ds.meta.builtIn;
+      });
+
+      $scope.datasourceTypes = _.map($scope.datasourceTypes, function(value) {
+        return value;
+      });
+
       $scope.variables = templateSrv.variables;
       $scope.reset();
 
-      $scope.$watch('editor.index', function(index) {
-        if ($scope.currentIsNew === false && index === 1) {
+      $scope.$watch('mode', function(val) {
+        if (val === 'new') {
           $scope.reset();
+        }
+      });
+
+      $scope.$watch('current.datasource', function(val) {
+        if ($scope.mode === 'new') {
+          datasourceSrv.get(val).then(function(ds) {
+            if (ds.meta.defaultMatchFormat) {
+              $scope.current.allFormat = ds.meta.defaultMatchFormat;
+              $scope.current.multiFormat = ds.meta.defaultMatchFormat;
+            }
+          });
         }
       });
     };
@@ -63,16 +102,16 @@ function (angular, _) {
     };
 
     $scope.runQuery = function() {
-      return templateValuesSrv.updateOptions($scope.current).then(function() {
-      }, function(err) {
-        alertSrv.set('Templating', 'Failed to run query for variable values: ' + err.message, 'error');
+      return templateValuesSrv.updateOptions($scope.current).then(null, function(err) {
+        if (err.data && err.data.message) { err.message = err.data.message; }
+        $scope.appEvent("alert-error", ['Templating', 'Template variables could not be initialized: ' + err.message]);
       });
     };
 
     $scope.edit = function(variable) {
       $scope.current = variable;
       $scope.currentIsNew = false;
-      $scope.editor.index = 2;
+      $scope.mode = 'edit';
 
       if ($scope.current.datasource === void 0) {
         $scope.current.datasource = null;
@@ -81,11 +120,18 @@ function (angular, _) {
       }
     };
 
+    $scope.duplicate = function(variable) {
+      $scope.current = angular.copy(variable);
+      $scope.variables.push($scope.current);
+      $scope.current.name = 'copy_of_'+variable.name;
+      $scope.updateSubmenuVisibility();
+    };
+
     $scope.update = function() {
       if ($scope.isValid()) {
         $scope.runQuery().then(function() {
           $scope.reset();
-          $scope.editor.index = 0;
+          $scope.mode = 'list';
         });
       }
     };
@@ -99,8 +145,15 @@ function (angular, _) {
       if ($scope.current.type === 'interval') {
         $scope.current.query = '1m,10m,30m,1h,6h,12h,1d,7d,14d,30d';
       }
+
       if ($scope.current.type === 'query') {
         $scope.current.query = '';
+      }
+
+      if ($scope.current.type === 'datasource') {
+        $scope.current.query = $scope.datasourceTypes[0].value;
+        $scope.current.regex = '';
+        $scope.current.refresh = 1;
       }
     };
 

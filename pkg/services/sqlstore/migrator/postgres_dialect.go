@@ -28,8 +28,23 @@ func (db *Postgres) QuoteStr() string {
 	return "\""
 }
 
+func (b *Postgres) LikeStr() string {
+	return "ILIKE"
+}
+
 func (db *Postgres) AutoIncrStr() string {
 	return ""
+}
+
+func (b *Postgres) Default(col *Column) string {
+	if col.Type == DB_Bool {
+		if col.Default == "0" {
+			return "FALSE"
+		} else {
+			return "TRUE"
+		}
+	}
+	return col.Default
 }
 
 func (db *Postgres) SqlType(c *Column) string {

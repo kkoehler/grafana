@@ -1,10 +1,9 @@
 define([
   'angular',
-  'app',
   'lodash',
-  'config'
+  'app/core/config'
 ],
-function (angular, app, _, config) {
+function (angular, _, config) {
   'use strict';
 
   var module = angular.module('grafana.controllers');
@@ -22,7 +21,6 @@ function (angular, app, _, config) {
 
     $scope.init = function() {
       $scope.editor = {index: 0};
-      $scope.reset_panel();
     };
 
     $scope.togglePanelMenu = function(posX) {
@@ -30,114 +28,115 @@ function (angular, app, _, config) {
       $scope.panelMenuPos = posX;
     };
 
-    $scope.toggle_row = function(row) {
+    $scope.toggleRow = function(row) {
       row.collapse = row.collapse ? false : true;
-      if (!row.collapse) {
-        $timeout(function() {
-          $scope.$broadcast('render');
-        });
+    };
+
+    $scope.addPanel = function(panel) {
+      $scope.dashboard.addPanel(panel, $scope.row);
+    };
+
+    $scope.deleteRow = function() {
+      function delete_row() {
+        $scope.dashboard.rows = _.without($scope.dashboard.rows, $scope.row);
       }
-    };
 
-    $scope.add_panel = function(panel) {
-      $scope.dashboard.add_panel(panel, $scope.row);
-    };
-
-    $scope.delete_row = function() {
-      $scope.appEvent('confirm-modal', {
-        title: 'Are you sure you want to delete this row?',
-        icon: 'fa-trash',
-        yesText: 'delete',
-        onConfirm: function() {
-          $scope.dashboard.rows = _.without($scope.dashboard.rows, $scope.row);
-        }
-      });
-    };
-
-    $scope.move_row = function(direction) {
-      var rowsList = $scope.dashboard.rows;
-      var rowIndex = _.indexOf(rowsList, $scope.row);
-      var newIndex = rowIndex + direction;
-      if (newIndex >= 0 && newIndex <= (rowsList.length - 1)) {
-        _.move(rowsList, rowIndex, rowIndex + direction);
+      if (!$scope.row.panels.length) {
+        delete_row();
+        return;
       }
-    };
 
-    $scope.add_panel_default = function(type) {
-      $scope.reset_panel(type);
-      $scope.add_panel($scope.panel);
-
-      $timeout(function() {
-        $scope.$broadcast('render');
-      });
-    };
-
-    $scope.set_height = function(height) {
-      $scope.row.height = height;
-      $scope.$broadcast('render');
-    };
-
-    $scope.removePanel = function(panel) {
       $scope.appEvent('confirm-modal', {
-        title: 'Are you sure you want to remove this panel?',
+        title: 'Delete',
+        text: 'Are you sure you want to delete this row?',
         icon: 'fa-trash',
         yesText: 'Delete',
         onConfirm: function() {
-          $scope.row.panels = _.without($scope.row.panels, panel);
+          delete_row();
         }
       });
     };
 
-    $scope.updatePanelSpan = function(panel, span) {
-      panel.span = Math.min(Math.max(panel.span + span, 1), 12);
-    };
-
-    $scope.replacePanel = function(newPanel, oldPanel) {
-      var row = $scope.row;
-      var index = _.indexOf(row.panels, oldPanel);
-      row.panels.splice(index, 1);
-
-      // adding it back needs to be done in next digest
-      $timeout(function() {
-        newPanel.id = oldPanel.id;
-        newPanel.span = oldPanel.span;
-        row.panels.splice(index, 0, newPanel);
+    $scope.editRow = function() {
+      $scope.appEvent('show-dash-editor', {
+        src: 'public/app/partials/roweditor.html',
+        scope: $scope.$new()
       });
     };
 
-    $scope.reset_panel = function(type) {
+    $scope.moveRow = function(direction) {
+      var rowsList = $scope.dashboard.rows;
+      var rowIndex = _.indexOf(rowsList, $scope.row);
+      var newIndex = rowIndex;
+      switch(direction) {
+        case 'up': {
+          newIndex = rowIndex - 1;
+          break;
+        }
+        case 'down': {
+          newIndex = rowIndex + 1;
+          break;
+        }
+        case 'top': {
+          newIndex = 0;
+          break;
+        }
+        case 'bottom': {
+          newIndex = rowsList.length - 1;
+          break;
+        }
+        default: {
+          newIndex = rowIndex;
+        }
+      }
+      if (newIndex >= 0 && newIndex <= (rowsList.length - 1)) {
+        _.move(rowsList, rowIndex, newIndex);
+      }
+    };
+
+    $scope.addPanelDefault = function(type) {
       var defaultSpan = 12;
       var _as = 12 - $scope.dashboard.rowSpan($scope.row);
 
-      $scope.panel = {
+      var panel = {
         title: config.new_panel_title,
         error: false,
         span: _as < defaultSpan && _as > 0 ? _as : defaultSpan,
         editable: true,
-        type: type
+        type: type,
+        isNew: true,
       };
 
-      function fixRowHeight(height) {
-        if (!height) {
-          return '200px';
-        }
-        if (!_.isString(height)) {
-          return height + 'px';
-        }
-        return height;
-      }
+      $scope.addPanel(panel);
 
-      $scope.row.height = fixRowHeight($scope.row.height);
+      $timeout(function() {
+        $scope.dashboardViewState.update({fullscreen: true, edit: true, panelId: panel.id });
+      });
+    };
+
+    $scope.setHeight = function(height) {
+      $scope.row.height = height;
+      $scope.$broadcast('render');
     };
 
     $scope.init();
-
   });
 
   module.directive('rowHeight', function() {
     return function(scope, element) {
       scope.$watchGroup(['row.collapse', 'row.height'], function() {
-        element[0].style.minHeight = scope.row.collapse ? '5px' : scope.row.height;
+        element.css({ minHeight: scope.row.collapse ? '5px' : scope.row.height });
+      });
+
+      scope.onAppEvent('panel-fullscreen-enter', function(evt, info) {
+        var hasPanel = _.findWhere(scope.row.panels, {id: info.panelId});
+        if (!hasPanel) {
+          element.hide();
+        }
+      });
+
+      scope.onAppEvent('panel-fullscreen-exit', function() {
+        element.show();
       });
     };
   });
@@ -147,6 +146,22 @@ function (angular, app, _, config) {
       function updateWidth() {
         element[0].style.width = ((scope.panel.span / 1.2) * 10) + '%';
       }
+
+      scope.onAppEvent('panel-fullscreen-enter', function(evt, info) {
+        if (scope.panel.id !== info.panelId) {
+          element.hide();
+        } else {
+          element[0].style.width = '100%';
+        }
+      });
+
+      scope.onAppEvent('panel-fullscreen-exit', function(evt, info) {
+        if (scope.panel.id !== info.panelId) {
+          element.show();
+        } else {
+          updateWidth();
+        }
+      });
 
       scope.$watch('panel.span', updateWidth);
     };

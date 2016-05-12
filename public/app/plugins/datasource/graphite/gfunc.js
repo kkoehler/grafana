@@ -43,7 +43,7 @@ function (_, $) {
   addFuncDef({
     name: 'perSecond',
     category: categories.Transform,
-    params: [],
+    params: [{ name: "max value", type: "int", optional: true }],
     defaultParams: [],
   });
 
@@ -81,7 +81,21 @@ function (_, $) {
   });
 
   addFuncDef({
+    name: 'stddevSeries',
+    params: optionalSeriesRefArgs,
+    defaultParams: [''],
+    category: categories.Calculate,
+  });
+
+  addFuncDef({
     name: 'divideSeries',
+    params: optionalSeriesRefArgs,
+    defaultParams: ['#A'],
+    category: categories.Calculate,
+  });
+
+  addFuncDef({
+    name: 'multiplySeries',
     params: optionalSeriesRefArgs,
     defaultParams: ['#A'],
     category: categories.Calculate,
@@ -242,7 +256,7 @@ function (_, $) {
       {
         name: "function",
         type: "string",
-        options: ['sum', 'avg']
+        options: ['sum', 'avg', 'maxSeries']
       }
     ],
     defaultParams: [3, "sum"]
@@ -272,7 +286,9 @@ function (_, $) {
 
   addFuncDef({
     name: 'sortByName',
-    category: categories.Special
+    category: categories.Special,
+    params: [{ name: "natural", type: "select", options: ["true", "false"], optional: true }],
+    defaultParams: ["false"]
   });
 
   addFuncDef({
@@ -510,6 +526,13 @@ function (_, $) {
   });
 
   addFuncDef({
+    name: "grep",
+    category: categories.Filter,
+    params: [{ name: "grep", type: 'string' }],
+    defaultParams: ['grep']
+  });
+
+  addFuncDef({
     name: 'highestCurrent',
     category: categories.Filter,
     params: [{ name: "count", type: "int" }],
@@ -601,6 +624,11 @@ function (_, $) {
     category: categories.Filter,
     params: [{ name: "n", type: "int" }],
     defaultParams: [5]
+  });
+
+  addFuncDef({
+    name: 'removeEmptySeries',
+    category: categories.Filter
   });
 
   addFuncDef({

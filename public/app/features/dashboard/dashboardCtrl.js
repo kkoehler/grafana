@@ -1,10 +1,10 @@
 define([
   'angular',
   'jquery',
-  'config',
-  'lodash',
+  'app/core/config',
+  'moment',
 ],
-function (angular, $, config) {
+function (angular, $, config, moment) {
   "use strict";
 
   var module = angular.module('grafana.controllers');
@@ -23,13 +23,12 @@ function (angular, $, config) {
       $timeout) {
 
     $scope.editor = { index: 0 };
-    $scope.topNavPartial = 'app/features/dashboard/partials/dashboardTopNav.html';
     $scope.panels = config.panels;
 
     var resizeEventTimeout;
 
     this.init = function(dashboard) {
-      $scope.reset_row();
+      $scope.resetRow();
       $scope.registerWindowResizeEvent();
       $scope.onAppEvent('show-json-editor', $scope.showJsonEditor);
       $scope.setupDashboard(dashboard);
@@ -58,21 +57,14 @@ function (angular, $, config) {
 
         dashboardKeybindings.shortcuts($scope);
 
-        $scope.updateTopNavPartial();
         $scope.updateSubmenuVisibility();
         $scope.setWindowTitleAndTheme();
 
         $scope.appEvent("dashboard-loaded", $scope.dashboard);
       }).catch(function(err) {
-        console.log('Failed to initialize dashboard', err);
+        if (err.data && err.data.message) { err.message = err.data.message; }
         $scope.appEvent("alert-error", ['Dashboard init failed', 'Template variables could not be initialized: ' + err.message]);
       });
-    };
-
-    $scope.updateTopNavPartial = function() {
-      if ($scope.dashboard.meta.isSnapshot) {
-        $scope.topNavPartial = 'app/features/dashboard/partials/snapshotTopNav.html';
-      }
     };
 
     $scope.updateSubmenuVisibility = function() {
@@ -84,20 +76,21 @@ function (angular, $, config) {
     };
 
     $scope.broadcastRefresh = function() {
+      $rootScope.performance.panelsRendered = 0;
       $rootScope.$broadcast('refresh');
     };
 
-    $scope.add_row = function(dash, row) {
+    $scope.addRow = function(dash, row) {
       dash.rows.push(row);
     };
 
-    $scope.add_row_default = function() {
-      $scope.reset_row();
+    $scope.addRowDefault = function() {
+      $scope.resetRow();
       $scope.row.title = 'New row';
-      $scope.add_row($scope.dashboard, $scope.row);
+      $scope.addRow($scope.dashboard, $scope.row);
     };
 
-    $scope.reset_row = function() {
+    $scope.resetRow = function() {
       $scope.row = {
         title: '',
         height: '250px',
@@ -105,19 +98,11 @@ function (angular, $, config) {
       };
     };
 
-    $scope.panelEditorPath = function(type) {
-      return 'app/' + config.panels[type].path + '/editor.html';
-    };
-
-    $scope.pulldownEditorPath = function(type) {
-      return 'app/panels/'+type+'/editor.html';
-    };
-
     $scope.showJsonEditor = function(evt, options) {
       var editScope = $rootScope.$new();
       editScope.object = options.object;
       editScope.updateHandler = options.updateHandler;
-      $scope.appEvent('show-dash-editor', { src: 'app/partials/edit_json.html', scope: editScope });
+      $scope.appEvent('show-dash-editor', { src: 'public/app/partials/edit_json.html', scope: editScope });
     };
 
     $scope.onDrop = function(panelId, row, dropTarget) {
@@ -147,6 +132,14 @@ function (angular, $, config) {
       $scope.$on('$destroy', function() {
         angular.element(window).unbind('resize');
       });
+    };
+
+    $scope.timezoneChanged = function() {
+      $rootScope.$broadcast("refresh");
+    };
+
+    $scope.formatDate = function(date) {
+      return moment(date).format('MMM Do YYYY, h:mm:ss a');
     };
 
   });

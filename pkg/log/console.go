@@ -45,15 +45,17 @@ var (
 
 // ConsoleWriter implements LoggerInterface and writes messages to terminal.
 type ConsoleWriter struct {
-	lg    *log.Logger
-	Level int `json:"level"`
+	lg         *log.Logger
+	Level      LogLevel `json:"level"`
+	Formatting bool     `json:"formatting"`
 }
 
 // create ConsoleWriter returning as LoggerInterface.
 func NewConsole() LoggerInterface {
 	return &ConsoleWriter{
-		lg:    log.New(os.Stderr, "", log.Ldate|log.Ltime),
-		Level: TRACE,
+		lg:         log.New(os.Stderr, "", log.Ldate|log.Ltime),
+		Level:      TRACE,
+		Formatting: true,
 	}
 }
 
@@ -61,11 +63,11 @@ func (cw *ConsoleWriter) Init(config string) error {
 	return json.Unmarshal([]byte(config), cw)
 }
 
-func (cw *ConsoleWriter) WriteMsg(msg string, skip, level int) error {
+func (cw *ConsoleWriter) WriteMsg(msg string, skip int, level LogLevel) error {
 	if cw.Level > level {
 		return nil
 	}
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || !cw.Formatting {
 		cw.lg.Println(msg)
 	} else {
 		cw.lg.Println(colors[level](msg))
@@ -80,11 +82,11 @@ func (_ *ConsoleWriter) Flush() {
 func (_ *ConsoleWriter) Destroy() {
 }
 
-func printConsole(level int, msg string) {
+func printConsole(level LogLevel, msg string) {
 	consoleWriter.WriteMsg(msg, 0, level)
 }
 
-func printfConsole(level int, format string, v ...interface{}) {
+func printfConsole(level LogLevel, format string, v ...interface{}) {
 	consoleWriter.WriteMsg(fmt.Sprintf(format, v...), 0, level)
 }
 

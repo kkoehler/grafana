@@ -3,11 +3,12 @@ package middleware
 import (
 	"time"
 
-	"github.com/Unknwon/macaron"
-	"github.com/macaron-contrib/session"
-	_ "github.com/macaron-contrib/session/mysql"
-	_ "github.com/macaron-contrib/session/postgres"
-	_ "github.com/macaron-contrib/session/redis"
+	"github.com/go-macaron/session"
+	_ "github.com/go-macaron/session/memcache"
+	_ "github.com/go-macaron/session/mysql"
+	_ "github.com/go-macaron/session/postgres"
+	_ "github.com/go-macaron/session/redis"
+	"gopkg.in/macaron.v1"
 )
 
 const (
@@ -18,11 +19,15 @@ const (
 var sessionManager *session.Manager
 var sessionOptions *session.Options
 var startSessionGC func()
+var getSessionCount func() int
 
 func init() {
 	startSessionGC = func() {
 		sessionManager.GC()
 		time.AfterFunc(time.Duration(sessionOptions.Gclifetime)*time.Second, startSessionGC)
+	}
+	getSessionCount = func() int {
+		return sessionManager.Count()
 	}
 }
 

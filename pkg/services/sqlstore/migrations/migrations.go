@@ -10,12 +10,18 @@ import . "github.com/grafana/grafana/pkg/services/sqlstore/migrator"
 func AddMigrations(mg *Migrator) {
 	addMigrationLogMigrations(mg)
 	addUserMigrations(mg)
+	addTempUserMigrations(mg)
 	addStarMigrations(mg)
 	addOrgMigrations(mg)
 	addDashboardMigration(mg)
 	addDataSourceMigration(mg)
 	addApiKeyMigrations(mg)
 	addDashboardSnapshotMigrations(mg)
+	addQuotaMigration(mg)
+	addAppSettingsMigration(mg)
+	addSessionMigration(mg)
+	addPlaylistMigrations(mg)
+	addPreferencesMigrations(mg)
 }
 
 func addMigrationLogMigrations(mg *Migrator) {

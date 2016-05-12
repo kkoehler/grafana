@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Unknwon/macaron"
+	"github.com/go-macaron/session"
 	"github.com/grafana/grafana/pkg/bus"
 	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
-	"github.com/macaron-contrib/session"
 	. "github.com/smartystreets/goconvey/convey"
+	"gopkg.in/macaron.v1"
 )
 
 func TestMiddlewareContext(t *testing.T) {
@@ -45,6 +45,32 @@ func TestMiddlewareContext(t *testing.T) {
 			Convey("Should return 401", func() {
 				So(sc.resp.Code, ShouldEqual, 401)
 				So(sc.respJson["message"], ShouldEqual, "Invalid API key")
+			})
+		})
+
+		middlewareScenario("Using basic auth", func(sc *scenarioContext) {
+
+			bus.AddHandler("test", func(query *m.GetUserByLoginQuery) error {
+				query.Result = &m.User{
+					Password: util.EncodePassword("myPass", "salt"),
+					Salt:     "salt",
+				}
+				return nil
+			})
+
+			bus.AddHandler("test", func(query *m.GetSignedInUserQuery) error {
+				query.Result = &m.SignedInUser{OrgId: 2, UserId: 12}
+				return nil
+			})
+
+			setting.BasicAuthEnabled = true
+			authHeader := util.GetBasicAuthHeader("myUser", "myPass")
+			sc.fakeReq("GET", "/").withAuthoriziationHeader(authHeader).exec()
+
+			Convey("Should init middleware context with user", func() {
+				So(sc.context.IsSignedIn, ShouldEqual, true)
+				So(sc.context.OrgId, ShouldEqual, 2)
+				So(sc.context.UserId, ShouldEqual, 12)
 			})
 		})
 
@@ -223,6 +249,7 @@ type scenarioContext struct {
 	context        *Context
 	resp           *httptest.ResponseRecorder
 	apiKey         string
+	authHeader     string
 	respJson       map[string]interface{}
 	handlerFunc    handlerFunc
 	defaultHandler macaron.Handler
@@ -237,6 +264,11 @@ func (sc *scenarioContext) withValidApiKey() *scenarioContext {
 
 func (sc *scenarioContext) withInvalidApiKey() *scenarioContext {
 	sc.apiKey = "nvalidhhhhds"
+	return sc
+}
+
+func (sc *scenarioContext) withAuthoriziationHeader(authHeader string) *scenarioContext {
+	sc.authHeader = authHeader
 	return sc
 }
 
@@ -264,6 +296,10 @@ func (sc *scenarioContext) handler(fn handlerFunc) *scenarioContext {
 func (sc *scenarioContext) exec() {
 	if sc.apiKey != "" {
 		sc.req.Header.Add("Authorization", "Bearer "+sc.apiKey)
+	}
+
+	if sc.authHeader != "" {
+		sc.req.Header.Add("Authorization", sc.authHeader)
 	}
 
 	sc.m.ServeHTTP(sc.resp, sc.req)

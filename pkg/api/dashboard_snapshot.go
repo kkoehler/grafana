@@ -12,7 +12,19 @@ import (
 	"github.com/grafana/grafana/pkg/util"
 )
 
+func GetSharingOptions(c *middleware.Context) {
+	c.JSON(200, util.DynMap{
+		"externalSnapshotURL":  setting.ExternalSnapshotUrl,
+		"externalSnapshotName": setting.ExternalSnapshotName,
+		"externalEnabled":      setting.ExternalEnabled,
+	})
+}
+
 func CreateDashboardSnapshot(c *middleware.Context, cmd m.CreateDashboardSnapshotCommand) {
+	if cmd.Name == "" {
+		cmd.Name = "Unnamed snapshot"
+	}
+
 	if cmd.External {
 		// external snapshot ref requires key and delete key
 		if cmd.Key == "" || cmd.DeleteKey == "" {
@@ -45,7 +57,6 @@ func CreateDashboardSnapshot(c *middleware.Context, cmd m.CreateDashboardSnapsho
 }
 
 func GetDashboardSnapshot(c *middleware.Context) {
-
 	key := c.Params(":key")
 	query := &m.GetDashboardSnapshotQuery{Key: key}
 
@@ -59,7 +70,7 @@ func GetDashboardSnapshot(c *middleware.Context) {
 
 	// expired snapshots should also be removed from db
 	if snapshot.Expires.Before(time.Now()) {
-		c.JsonApiErr(404, "Snapshot not found", err)
+		c.JsonApiErr(404, "Dashboard snapshot not found", err)
 		return
 	}
 
@@ -89,4 +100,43 @@ func DeleteDashboardSnapshot(c *middleware.Context) {
 	}
 
 	c.JSON(200, util.DynMap{"message": "Snapshot deleted. It might take an hour before it's cleared from a CDN cache."})
+}
+
+func SearchDashboardSnapshots(c *middleware.Context) Response {
+	query := c.Query("query")
+	limit := c.QueryInt("limit")
+
+	if limit == 0 {
+		limit = 1000
+	}
+
+	searchQuery := m.GetDashboardSnapshotsQuery{
+		Name:  query,
+		Limit: limit,
+		OrgId: c.OrgId,
+	}
+
+	err := bus.Dispatch(&searchQuery)
+	if err != nil {
+		return ApiError(500, "Search failed", err)
+	}
+
+	dtos := make([]*m.DashboardSnapshotDTO, len(searchQuery.Result))
+	for i, snapshot := range searchQuery.Result {
+		dtos[i] = &m.DashboardSnapshotDTO{
+			Id:          snapshot.Id,
+			Name:        snapshot.Name,
+			Key:         snapshot.Key,
+			DeleteKey:   snapshot.DeleteKey,
+			OrgId:       snapshot.OrgId,
+			UserId:      snapshot.UserId,
+			External:    snapshot.External,
+			ExternalUrl: snapshot.ExternalUrl,
+			Expires:     snapshot.Expires,
+			Created:     snapshot.Created,
+			Updated:     snapshot.Updated,
+		}
+	}
+
+	return Json(200, dtos)
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"github.com/grafana/grafana/pkg/bus"
+	"github.com/grafana/grafana/pkg/log"
 	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
 )
@@ -19,7 +20,7 @@ func initContextWithAuthProxy(ctx *Context) bool {
 	query := getSignedInUserQueryForProxyAuth(proxyHeaderValue)
 	if err := bus.Dispatch(query); err != nil {
 		if err != m.ErrUserNotFound {
-			ctx.Handle(500, "Failed find user specifed in auth proxy header", err)
+			ctx.Handle(500, "Failed to find user specified in auth proxy header", err)
 			return true
 		}
 
@@ -39,8 +40,16 @@ func initContextWithAuthProxy(ctx *Context) bool {
 		}
 	}
 
+	// initialize session
+	if err := ctx.Session.Start(ctx); err != nil {
+		log.Error(3, "Failed to start session", err)
+		return false
+	}
+
 	ctx.SignedInUser = query.Result
 	ctx.IsSignedIn = true
+	ctx.Session.Set(SESS_KEY_USERID, ctx.UserId)
+
 	return true
 }
 
@@ -60,8 +69,10 @@ func getCreateUserCommandForProxyAuth(headerVal string) *m.CreateUserCommand {
 	cmd := m.CreateUserCommand{}
 	if setting.AuthProxyHeaderProperty == "username" {
 		cmd.Login = headerVal
+		cmd.Email = headerVal
 	} else if setting.AuthProxyHeaderProperty == "email" {
 		cmd.Email = headerVal
+		cmd.Login = headerVal
 	} else {
 		panic("Auth proxy header property invalid")
 	}

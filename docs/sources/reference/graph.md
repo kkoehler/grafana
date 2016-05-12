@@ -30,7 +30,7 @@ The drilldown section allows adding dynamic links to the panel that can link to 
 or URLs
 
 Each link has a title, a type and params.  A link can be either a ``dashboard`` or ``absolute`` links.
-If it is a dashboard links, the `dashboard` value must be the name of a dashbaord.  If it's an
+If it is a dashboard links, the `dashboard` value must be the name of a dashboard.  If it's an
 `absolute` link, the URL is the URL to link.
 
 ``params`` allows adding additional URL params to the links.  The format is the ``name=value`` with
@@ -62,7 +62,7 @@ The ``Left Y`` and ``Right Y`` can be customized using:
 
 - ``Unit`` - The display unit for the Y value
 - ``Grid Max`` - The maximum Y value. (default auto)
-- ``Grid Min`` - The minium Y value. (default auto)
+- ``Grid Min`` - The minimum Y value. (default auto)
 - ``Label`` - The Y axis label (default "")
 
 Axes can also be hidden by unchecking the appropriate box from `Show Axis`.
@@ -127,7 +127,7 @@ If you have stack enabled you can select what the mouse hover feature should sho
 ### Rendering
 
 - ``Flot`` - Render the graphs in the browser using Flot (default)
-- ``Graphite PNG`` - Render the graph on the server using graphites render API.
+- ``Graphite PNG`` - Render the graph on the server using graphite's render API.
 
 ### Tooltip
 

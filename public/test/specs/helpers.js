@@ -1,7 +1,8 @@
 define([
- 'kbn',
- 'lodash'
-], function(kbn, _) {
+ 'lodash',
+ 'app/core/config',
+ 'app/core/utils/datemath',
+], function(_, config, dateMath) {
   'use strict';
 
   function ControllerTestContext() {
@@ -36,14 +37,37 @@ define([
       });
     };
 
-    this.createControllerPhase = function(controllerName) {
-      return inject(function($controller, $rootScope, $q, $location) {
+    this.createPanelController = function(Ctrl) {
+      return inject(function($controller, $rootScope, $q, $location, $browser) {
         self.scope = $rootScope.$new();
         self.$location = $location;
+        self.$browser = $browser;
+        self.$q = $q;
+        self.panel = {type: 'test'};
+        self.dashboard = {meta: {}};
+
+        $rootScope.appEvent = sinon.spy();
+        $rootScope.onAppEvent = sinon.spy();
+        $rootScope.colors = [];
+
+        for (var i = 0; i < 50; i++) { $rootScope.colors.push('#' + i); }
+
+        config.panels['test'] = {info: {}};
+        self.ctrl = $controller(Ctrl, {$scope: self.scope}, {
+          panel: self.panel, dashboard: self.dashboard, row: {}
+        });
+      });
+    };
+
+    this.createControllerPhase = function(controllerName) {
+      return inject(function($controller, $rootScope, $q, $location, $browser) {
+        self.scope = $rootScope.$new();
+        self.$location = $location;
+        self.$browser = $browser;
         self.scope.contextSrv = {};
         self.scope.panel = {};
         self.scope.row = { panels:[] };
-        self.scope.dashboard = {};
+        self.scope.dashboard = {meta: {}};
         self.scope.dashboardMeta = {};
         self.scope.dashboardViewState = new DashboardViewStateStub();
         self.scope.appEvent = sinon.spy();
@@ -58,7 +82,6 @@ define([
         self.controller = $controller(controllerName, {
           $scope: self.scope
         });
-
       });
     };
   }
@@ -73,10 +96,10 @@ define([
     self.$routeParams = {};
 
     this.providePhase = function(mocks) {
-     return module(function($provide) {
-       _.each(mocks, function(key) {
-         $provide.value(key, self[key]);
-       });
+      return module(function($provide) {
+        _.each(mocks, function(key) {
+          $provide.value(key, self[key]);
+        });
       });
     };
 
@@ -107,8 +130,8 @@ define([
         return this.time;
       }
       return {
-        from : kbn.parseDate(this.time.from),
-        to : kbn.parseDate(this.time.to)
+        from : dateMath.parse(this.time.from, false),
+        to : dateMath.parse(this.time.to, true)
       };
     };
 

@@ -3,6 +3,8 @@ package models
 import (
 	"errors"
 	"time"
+
+	"github.com/grafana/grafana/pkg/components/simplejson"
 )
 
 const (
@@ -11,6 +13,9 @@ const (
 	DS_INFLUXDB_08   = "influxdb_08"
 	DS_ES            = "elasticsearch"
 	DS_OPENTSDB      = "opentsdb"
+	DS_CLOUDWATCH    = "cloudwatch"
+	DS_KAIROSDB      = "kairosdb"
+	DS_PROMETHEUS    = "prometheus"
 	DS_ACCESS_DIRECT = "direct"
 	DS_ACCESS_PROXY  = "proxy"
 )
@@ -37,11 +42,33 @@ type DataSource struct {
 	BasicAuth         bool
 	BasicAuthUser     string
 	BasicAuthPassword string
+	WithCredentials   bool
 	IsDefault         bool
-	JsonData          map[string]interface{}
+	JsonData          *simplejson.Json
 
 	Created time.Time
 	Updated time.Time
+}
+
+var knownDatasourcePlugins map[string]bool = map[string]bool{
+	DS_ES:          true,
+	DS_GRAPHITE:    true,
+	DS_INFLUXDB:    true,
+	DS_INFLUXDB_08: true,
+	DS_KAIROSDB:    true,
+	DS_CLOUDWATCH:  true,
+	DS_PROMETHEUS:  true,
+	DS_OPENTSDB:    true,
+	"opennms":      true,
+	"druid":        true,
+	"dalmatinerdb": true,
+	"gnocci":       true,
+	"zabbix":       true,
+}
+
+func IsKnownDataSourcePlugin(dsType string) bool {
+	_, exists := knownDatasourcePlugins[dsType]
+	return exists
 }
 
 // ----------------------
@@ -49,18 +76,19 @@ type DataSource struct {
 
 // Also acts as api DTO
 type AddDataSourceCommand struct {
-	Name              string                 `json:"name" binding:"Required"`
-	Type              string                 `json:"type" binding:"Required"`
-	Access            DsAccess               `json:"access" binding:"Required"`
-	Url               string                 `json:"url"`
-	Password          string                 `json:"password"`
-	Database          string                 `json:"database"`
-	User              string                 `json:"user"`
-	BasicAuth         bool                   `json:"basicAuth"`
-	BasicAuthUser     string                 `json:"basicAuthUser"`
-	BasicAuthPassword string                 `json:"basicAuthPassword"`
-	IsDefault         bool                   `json:"isDefault"`
-	JsonData          map[string]interface{} `json:"jsonData"`
+	Name              string           `json:"name" binding:"Required"`
+	Type              string           `json:"type" binding:"Required"`
+	Access            DsAccess         `json:"access" binding:"Required"`
+	Url               string           `json:"url"`
+	Password          string           `json:"password"`
+	Database          string           `json:"database"`
+	User              string           `json:"user"`
+	BasicAuth         bool             `json:"basicAuth"`
+	BasicAuthUser     string           `json:"basicAuthUser"`
+	BasicAuthPassword string           `json:"basicAuthPassword"`
+	WithCredentials   bool             `json:"withCredentials"`
+	IsDefault         bool             `json:"isDefault"`
+	JsonData          *simplejson.Json `json:"jsonData"`
 
 	OrgId int64 `json:"-"`
 
@@ -69,21 +97,22 @@ type AddDataSourceCommand struct {
 
 // Also acts as api DTO
 type UpdateDataSourceCommand struct {
-	Id                int64                  `json:"id" binding:"Required"`
-	Name              string                 `json:"name" binding:"Required"`
-	Type              string                 `json:"type" binding:"Required"`
-	Access            DsAccess               `json:"access" binding:"Required"`
-	Url               string                 `json:"url"`
-	Password          string                 `json:"password"`
-	User              string                 `json:"user"`
-	Database          string                 `json:"database"`
-	BasicAuth         bool                   `json:"basicAuth"`
-	BasicAuthUser     string                 `json:"basicAuthUser"`
-	BasicAuthPassword string                 `json:"basicAuthPassword"`
-	IsDefault         bool                   `json:"isDefault"`
-	JsonData          map[string]interface{} `json:"jsonData"`
+	Name              string           `json:"name" binding:"Required"`
+	Type              string           `json:"type" binding:"Required"`
+	Access            DsAccess         `json:"access" binding:"Required"`
+	Url               string           `json:"url"`
+	Password          string           `json:"password"`
+	User              string           `json:"user"`
+	Database          string           `json:"database"`
+	BasicAuth         bool             `json:"basicAuth"`
+	BasicAuthUser     string           `json:"basicAuthUser"`
+	BasicAuthPassword string           `json:"basicAuthPassword"`
+	WithCredentials   bool             `json:"withCredentials"`
+	IsDefault         bool             `json:"isDefault"`
+	JsonData          *simplejson.Json `json:"jsonData"`
 
 	OrgId int64 `json:"-"`
+	Id    int64 `json:"-"`
 }
 
 type DeleteDataSourceCommand struct {

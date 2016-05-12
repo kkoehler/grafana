@@ -16,10 +16,12 @@ type Dialect interface {
 	ShowCreateNull() bool
 	SqlType(col *Column) string
 	SupportEngine() bool
+	LikeStr() string
+	Default(col *Column) string
 
 	CreateIndexSql(tableName string, index *Index) string
 	CreateTableSql(table *Table) string
-	AddColumnSql(tableName string, Col *Column) string
+	AddColumnSql(tableName string, col *Column) string
 	CopyTableData(sourceTable string, targetTable string, sourceCols []string, targetCols []string) string
 	DropTable(tableName string) string
 	DropIndexSql(tableName string, index *Index) string
@@ -58,12 +60,20 @@ func (b *BaseDialect) AndStr() string {
 	return "AND"
 }
 
+func (b *BaseDialect) LikeStr() string {
+	return "LIKE"
+}
+
 func (b *BaseDialect) OrStr() string {
 	return "OR"
 }
 
 func (b *BaseDialect) EqStr() string {
 	return "="
+}
+
+func (b *BaseDialect) Default(col *Column) string {
+	return col.Default
 }
 
 func (b *BaseDialect) CreateTableSql(table *Table) string {

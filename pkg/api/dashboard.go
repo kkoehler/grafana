@@ -4,18 +4,19 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/grafana/grafana/pkg/api/dtos"
 	"github.com/grafana/grafana/pkg/bus"
 	"github.com/grafana/grafana/pkg/metrics"
 	"github.com/grafana/grafana/pkg/middleware"
 	m "github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/search"
+	"github.com/grafana/grafana/pkg/services/search"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 )
 
-func isDasboardStarredByUser(c *middleware.Context, dashId int64) (bool, error) {
+func isDashboardStarredByUser(c *middleware.Context, dashId int64) (bool, error) {
 	if !c.IsSignedIn {
 		return false, nil
 	}
@@ -31,7 +32,7 @@ func isDasboardStarredByUser(c *middleware.Context, dashId int64) (bool, error) 
 func GetDashboard(c *middleware.Context) {
 	metrics.M_Api_Dashboard_Get.Inc(1)
 
-	slug := c.Params(":slug")
+	slug := strings.ToLower(c.Params(":slug"))
 
 	query := m.GetDashboardQuery{Slug: slug, OrgId: c.OrgId}
 	err := bus.Dispatch(&query)
@@ -40,13 +41,23 @@ func GetDashboard(c *middleware.Context) {
 		return
 	}
 
-	isStarred, err := isDasboardStarredByUser(c, query.Result.Id)
+	isStarred, err := isDashboardStarredByUser(c, query.Result.Id)
 	if err != nil {
 		c.JsonApiErr(500, "Error while checking if dashboard was starred by user", err)
 		return
 	}
 
 	dash := query.Result
+
+	// Finding creator and last updater of the dashboard
+	updater, creator := "Anonymous", "Anonymous"
+	if dash.UpdatedBy > 0 {
+		updater = getUserLogin(dash.UpdatedBy)
+	}
+	if dash.CreatedBy > 0 {
+		creator = getUserLogin(dash.CreatedBy)
+	}
+
 	dto := dtos.DashboardFullWithMeta{
 		Dashboard: dash.Data,
 		Meta: dtos.DashboardMeta{
@@ -55,10 +66,27 @@ func GetDashboard(c *middleware.Context) {
 			Type:      m.DashTypeDB,
 			CanStar:   c.IsSignedIn,
 			CanSave:   c.OrgRole == m.ROLE_ADMIN || c.OrgRole == m.ROLE_EDITOR,
+			CanEdit:   canEditDashboard(c.OrgRole),
+			Created:   dash.Created,
+			Updated:   dash.Updated,
+			UpdatedBy: updater,
+			CreatedBy: creator,
+			Version:   dash.Version,
 		},
 	}
 
 	c.JSON(200, dto)
+}
+
+func getUserLogin(userId int64) string {
+	query := m.GetUserByIdQuery{Id: userId}
+	err := bus.Dispatch(&query)
+	if err != nil {
+		return "Anonymous"
+	} else {
+		user := query.Result
+		return user.Login
+	}
 }
 
 func DeleteDashboard(c *middleware.Context) {
@@ -84,6 +112,25 @@ func DeleteDashboard(c *middleware.Context) {
 func PostDashboard(c *middleware.Context, cmd m.SaveDashboardCommand) {
 	cmd.OrgId = c.OrgId
 
+	if !c.IsSignedIn {
+		cmd.UserId = -1
+	} else {
+		cmd.UserId = c.UserId
+	}
+
+	dash := cmd.GetDashboardModel()
+	if dash.Id == 0 {
+		limitReached, err := middleware.QuotaReached(c, "dashboard")
+		if err != nil {
+			c.JsonApiErr(500, "failed to get quota", err)
+			return
+		}
+		if limitReached {
+			c.JsonApiErr(403, "Quota reached", nil)
+			return
+		}
+	}
+
 	err := bus.Dispatch(&cmd)
 	if err != nil {
 		if err == m.ErrDashboardWithSameNameExists {
@@ -107,7 +154,29 @@ func PostDashboard(c *middleware.Context, cmd m.SaveDashboardCommand) {
 	c.JSON(200, util.DynMap{"status": "success", "slug": cmd.Result.Slug, "version": cmd.Result.Version})
 }
 
+func canEditDashboard(role m.RoleType) bool {
+	return role == m.ROLE_ADMIN || role == m.ROLE_EDITOR || role == m.ROLE_READ_ONLY_EDITOR
+}
+
 func GetHomeDashboard(c *middleware.Context) {
+	prefsQuery := m.GetPreferencesWithDefaultsQuery{OrgId: c.OrgId, UserId: c.UserId}
+	if err := bus.Dispatch(&prefsQuery); err != nil {
+		c.JsonApiErr(500, "Failed to get preferences", err)
+	}
+
+	if prefsQuery.Result.HomeDashboardId != 0 {
+		slugQuery := m.GetDashboardSlugByIdQuery{Id: prefsQuery.Result.HomeDashboardId}
+		err := bus.Dispatch(&slugQuery)
+		if err != nil {
+			c.JsonApiErr(500, "Failed to get slug from database", err)
+			return
+		}
+
+		dashRedirect := dtos.DashboardRedirect{RedirectUri: "db/" + slugQuery.Result}
+		c.JSON(200, &dashRedirect)
+		return
+	}
+
 	filePath := path.Join(setting.StaticRootPath, "dashboards/home.json")
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -117,6 +186,7 @@ func GetHomeDashboard(c *middleware.Context) {
 
 	dash := dtos.DashboardFullWithMeta{}
 	dash.Meta.IsHome = true
+	dash.Meta.CanEdit = canEditDashboard(c.OrgRole)
 	jsonParser := json.NewDecoder(file)
 	if err := jsonParser.Decode(&dash.Dashboard); err != nil {
 		c.JsonApiErr(500, "Failed to load home dashboard", err)
@@ -137,6 +207,7 @@ func GetDashboardFromJsonFile(c *middleware.Context) {
 
 	dash := dtos.DashboardFullWithMeta{Dashboard: dashboard.Data}
 	dash.Meta.Type = m.DashTypeJson
+	dash.Meta.CanEdit = canEditDashboard(c.OrgRole)
 
 	c.JSON(200, &dash)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/grafana/grafana/pkg/api/dtos"
 	"github.com/grafana/grafana/pkg/bus"
 	"github.com/grafana/grafana/pkg/log"
+	"github.com/grafana/grafana/pkg/login"
 	"github.com/grafana/grafana/pkg/metrics"
 	"github.com/grafana/grafana/pkg/middleware"
 	m "github.com/grafana/grafana/pkg/models"
@@ -18,18 +19,19 @@ const (
 )
 
 func LoginView(c *middleware.Context) {
-	if err := setIndexViewData(c); err != nil {
+	viewData, err := setIndexViewData(c)
+	if err != nil {
 		c.Handle(500, "Failed to get settings", err)
 		return
 	}
 
-	settings := c.Data["Settings"].(map[string]interface{})
-	settings["googleAuthEnabled"] = setting.OAuthService.Google
-	settings["githubAuthEnabled"] = setting.OAuthService.GitHub
-	settings["disableUserSignUp"] = !setting.AllowUserSignUp
+	viewData.Settings["googleAuthEnabled"] = setting.OAuthService.Google
+	viewData.Settings["githubAuthEnabled"] = setting.OAuthService.GitHub
+	viewData.Settings["disableUserSignUp"] = !setting.AllowUserSignUp
+	viewData.Settings["loginHint"] = setting.LoginHint
 
 	if !tryLoginUsingRememberCookie(c) {
-		c.HTML(200, VIEW_INDEX)
+		c.HTML(200, VIEW_INDEX, viewData)
 		return
 	}
 
@@ -86,22 +88,21 @@ func LoginApiPing(c *middleware.Context) {
 	c.JsonOK("Logged in")
 }
 
-func LoginPost(c *middleware.Context, cmd dtos.LoginCommand) {
-	userQuery := m.GetUserByLoginQuery{LoginOrEmail: cmd.User}
-	err := bus.Dispatch(&userQuery)
-
-	if err != nil {
-		c.JsonApiErr(401, "Invalid username or password", err)
-		return
+func LoginPost(c *middleware.Context, cmd dtos.LoginCommand) Response {
+	authQuery := login.LoginUserQuery{
+		Username: cmd.User,
+		Password: cmd.Password,
 	}
 
-	user := userQuery.Result
+	if err := bus.Dispatch(&authQuery); err != nil {
+		if err == login.ErrInvalidCredentials {
+			return ApiError(401, "Invalid username or password", err)
+		}
 
-	passwordHashed := util.EncodePassword(cmd.Password, user.Salt)
-	if passwordHashed != user.Password {
-		c.JsonApiErr(401, "Invalid username or password", err)
-		return
+		return ApiError(500, "Error while trying to authenticate user", err)
 	}
+
+	user := authQuery.User
 
 	loginUserWithUser(user, c)
 
@@ -116,7 +117,7 @@ func LoginPost(c *middleware.Context, cmd dtos.LoginCommand) {
 
 	metrics.M_Api_Login_Post.Inc(1)
 
-	c.JSON(200, result)
+	return Json(200, result)
 }
 
 func loginUserWithUser(user *m.User, c *middleware.Context) {
@@ -125,8 +126,10 @@ func loginUserWithUser(user *m.User, c *middleware.Context) {
 	}
 
 	days := 86400 * setting.LogInRememberDays
-	c.SetCookie(setting.CookieUserName, user.Login, days, setting.AppSubUrl+"/")
-	c.SetSuperSecureCookie(util.EncodeMd5(user.Rands+user.Password), setting.CookieRememberName, user.Login, days, setting.AppSubUrl+"/")
+	if days > 0 {
+		c.SetCookie(setting.CookieUserName, user.Login, days, setting.AppSubUrl+"/")
+		c.SetSuperSecureCookie(util.EncodeMd5(user.Rands+user.Password), setting.CookieRememberName, user.Login, days, setting.AppSubUrl+"/")
+	}
 
 	c.Session.Set(middleware.SESS_KEY_USERID, user.Id)
 }
